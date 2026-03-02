@@ -1,0 +1,8 @@
+{
+  "chat.promptFilesRecommendations": {
+    "article.orchestrator": true,
+    "article.writer": true,
+    "article.publisher": true
+  },
+  "chat.customAgentInSubagent.enabled": true
+}
