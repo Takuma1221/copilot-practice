@@ -1,0 +1,20 @@
+{
+  "name": "copilot-sdk-article-review-tool",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "first-message": "tsx src/first-message.ts",
+    "stream-demo": "tsx src/streaming-demo.ts",
+    "review": "tsx src/review.ts"
+  },
+  "dependencies": {
+    "@github/copilot-sdk": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}
