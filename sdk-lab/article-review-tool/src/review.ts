@@ -4,6 +4,7 @@ import { resultSchema, reviewOutputSchema, type ReviewOutput } from "./types.js"
 import { extractJsonObject, listMarkdownFiles, readText, toWorkspaceRelative } from "./utils.js";
 
 const buildSystemPrompt = (maxFindingsPerFile: number): string =>
+  // システムプロンプトでは、レビュアーの役割と出力ルールを固定する。
   [
     "You are a strict Markdown article reviewer.",
     "Respond with JSON only.",
@@ -22,6 +23,7 @@ const buildUserPrompt = (input: {
   reviewCriteria: string;
   file: { path: string; content: string };
 }): string =>
+  // ユーザープロンプトには、テンプレート、採点基準、対象記事本文をまとめて渡す。
   [
     "Review the following article.",
     "Score the file out of 100 using the provided category weights.",
@@ -63,14 +65,15 @@ const buildUserPrompt = (input: {
   ].join("\n\n");
 
 const buildSummary = (results: ReviewOutput["results"]): ReviewOutput["summary"] => ({
-    filesReviewed: results.length,
-    totalFindings: results.reduce((sum, result) => sum + result.findings.length, 0),
-    passCount: results.filter((result) => result.verdict === "pass").length,
-    conditionalPassCount: results.filter((result) => result.verdict === "conditional-pass").length,
-    failCount: results.filter((result) => result.verdict === "fail").length,
-  });
+  filesReviewed: results.length,
+  totalFindings: results.reduce((sum, result) => sum + result.findings.length, 0),
+  passCount: results.filter((result) => result.verdict === "pass").length,
+  conditionalPassCount: results.filter((result) => result.verdict === "conditional-pass").length,
+  failCount: results.filter((result) => result.verdict === "fail").length,
+});
 
 const repairJsonResponse = async (client: CopilotClient, rawContent: string): Promise<string> => {
+  // モデルが崩れた JSON を返したときだけ、JSON 修復専用セッションに投げ直す。
   const session = await client.createSession({
     model: defaultReviewConfig.model,
     onPermissionRequest: approveAll,
@@ -108,6 +111,7 @@ const repairJsonResponse = async (client: CopilotClient, rawContent: string): Pr
 
 const parseReviewResult = async (client: CopilotClient, rawContent: string) => {
   try {
+    // まずはそのまま JSON として読めるかを試す。
     return resultSchema.parse(JSON.parse(extractJsonObject(rawContent)));
   } catch {
     // モデル出力が壊れたときだけ、JSON 修復用の軽い再問い合わせを1回行う。
@@ -121,6 +125,7 @@ const reviewSingleFile = async (client: CopilotClient, input: {
   reviewCriteria: string;
   file: { path: string; content: string };
 }) => {
+  // 各ファイルごとに独立したセッションを作り、レビュー文脈が混ざらないようにする。
   const session = await client.createSession({
     model: defaultReviewConfig.model,
     streaming: defaultReviewConfig.streaming,
@@ -134,6 +139,7 @@ const reviewSingleFile = async (client: CopilotClient, input: {
 
   try {
     if (defaultReviewConfig.streaming) {
+      // review でも streaming を有効化した場合は、生成途中の文字列を stderr に流す。
       session.on("assistant.message_delta", (event) => {
         process.stderr.write(event.data.deltaContent ?? "");
       });
@@ -159,7 +165,10 @@ const reviewSingleFile = async (client: CopilotClient, input: {
 };
 
 const main = async () => {
+  // 1. レビュー対象の Markdown を列挙する。
   const markdownFiles = await listMarkdownFiles(defaultReviewConfig.targetDir);
+
+  // 2. モデルへ渡しやすいように、相対パスと本文をセットにした配列へ変換する。
   const filePayload = await Promise.all(
     markdownFiles.map(async (filePath) => ({
       path: toWorkspaceRelative(filePath, defaultReviewConfig.workspaceRoot),
@@ -167,19 +176,24 @@ const main = async () => {
     })),
   );
 
+  // 3. 全ファイル共通で使うテンプレートとレビュー基準を読む。
   const [template, reviewCriteria] = await Promise.all([
     readText(defaultReviewConfig.templatePath),
     readText(defaultReviewConfig.reviewCriteriaPath),
   ]);
 
+  // 4. Copilot SDK クライアントを作る。ここから各レビュー用セッションを生成する。
   const client = new CopilotClient({
     ...(process.env.COPILOT_CLI_PATH ? { cliPath: process.env.COPILOT_CLI_PATH } : {}),
     ...(process.env.GITHUB_TOKEN ? { githubToken: process.env.GITHUB_TOKEN } : {}),
   });
 
   try {
-    const results = [];
-    // モデルの出力はファイル単位で検証し、最後にローカルで集計する。
+    const results: ReviewOutput["results"] = [];
+
+    // 5. ファイルを1本ずつレビューする。
+    //    ここでは逐次実行しているため、各レビューの完了を待ってから次へ進む。
+    //    セッションは reviewSingleFile 内で毎回作り直しているので、文脈は分離される。
     for (const file of filePayload) {
       const result = await reviewSingleFile(client, {
         template,
@@ -189,12 +203,16 @@ const main = async () => {
       results.push(result);
     }
 
+    // 6. ファイル単位の結果をローカルで集計し、最終出力の形に整える。
     const validated = reviewOutputSchema.parse({
       summary: buildSummary(results),
       results,
     });
+
+    // 7. 最終結果を JSON として標準出力へ出す。
     process.stdout.write(`${JSON.stringify(validated, null, 2)}\n`);
   } finally {
+    // 8. 途中で失敗しても、SDK クライアントは必ず停止する。
     await client.stop();
   }
 };
