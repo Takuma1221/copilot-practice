@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Get Time App</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 16px;
+        background: #f9f9f9;
+      }
+      code {
+        background: #eee;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 1.1em;
+      }
+      button {
+        margin-top: 12px;
+        padding: 8px 16px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>サーバー時刻</h2>
+    <p><strong>現在時刻:</strong> <code id="server-time">読み込み中...</code></p>
+    <button id="get-time-btn">時刻を更新</button>
+
+    <!-- src/mcp-app.ts を読み込む（viteビルド時にインライン化される） -->
+    <script type="module" src="/src/mcp-app.ts"></script>
+  </body>
+</html>
